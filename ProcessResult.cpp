@@ -15,8 +15,6 @@
 
 using namespace std;
 
-#define PACKETSIZE 1400		// packet size used in simulation
-
 
 // function declaration
 int main(int argc, char *argv[]);
@@ -58,14 +56,15 @@ bool compareByThr(const flowMeas &a, const flowMeas &b);
 
 
 int main(int argc, char *argv[]) {
-	// the output files will be saved in the same directory of the input file
+	// argv[1] needs to be the "...RESULT_x.data" file to process
+	// if there is no argv[2], the output files will be saved in the same directory of the input file
 	cout << "ProcessResult is starting..." << endl;
 
 	// DEBUG
-	argc = 2;
-	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
+//	argc = 2;
+//	argv[1] = "/home/davide/Desktop/tmp/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_1x/DCTCP_1-1-test_1x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
 //	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_02x/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
-	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
+//	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
 
 	if (argc < 2) {
@@ -502,6 +501,25 @@ bool writeThrStats(string file) {
 		write << "\n";
 
 
+		// write the average
+		write << "avg\t";
+		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+			double sum = 0;
+			for (int iA = 0; iA < (int)flowsMeasuredCat[i].size(); iA++) {
+				sum += flowsMeasuredCat[i].at(iA).thr;
+			}
+			write << sum/(double)flowsMeasuredCat[i].size() << "\t";
+		}
+		write << "\n";
+
+/*		// write 50%
+		write << "50%\t";
+		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+			int index = (int)flowsMeasuredCat[i].size()*0.5;
+			write << flowsMeasuredCat[i].at(index).thr << "\t";
+		}
+		write << "\n";*/
+
 		// write 90%
 		write << "90%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
@@ -559,13 +577,32 @@ bool writeFCTStats(string file) {
 	ofstream write(file.c_str());
 	if (write.is_open()) {
 		// write header
-		write << "#FCT for 90%, 95%, 99%, 99.9% and 99.99% for all different flow size categories\n";
+		write << "#FCT for avg, 50%, 90%, 95%, 99%, 99.9% and 99.99% for all different flow size categories\n";
 		write << "#Percentile\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			write << "cat" << i << "(ms)\t";
 		}
 		write << "\n";
 
+
+		// write the average
+		write << "avg\t";
+		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+			double sum = 0;
+			for (int iA = 0; iA < (int)flowsMeasuredCat[i].size(); iA++) {
+				sum += flowsMeasuredCat[i].at(iA).fct/1000000.0;
+			}
+			write << sum/(double)flowsMeasuredCat[i].size() << "\t";
+		}
+		write << "\n";
+
+/*		// write 50%
+		write << "50%\t";
+		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+			int index = (int)flowsMeasuredCat[i].size()*0.5;
+			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+		}
+		write << "\n";*/
 
 		// write 90%
 		write << "90%\t";
