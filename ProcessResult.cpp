@@ -18,6 +18,7 @@ using namespace std;
 
 // function declaration
 int main(int argc, char *argv[]);
+bool parseCommandLine(int argc, char *argv[]);
 bool readMeasFlows(string file);
 void categoriseFlows();
 
@@ -45,6 +46,7 @@ struct flowMeas {	// collect stats of measured flows from _RESULTS_x.data file
 vector<flowMeas> flowsMeasured;
 vector<int> sizeCategory;			// list of size categories
 vector<flowMeas> *flowsMeasuredCat;	// list of flow measured per category
+string resultFile;
 
 
 // compare functions
@@ -61,39 +63,50 @@ int main(int argc, char *argv[]) {
 	cout << "ProcessResult is starting..." << endl;
 
 	// DEBUG
-//	argc = 2;
-//	argv[1] = "/home/davide/Desktop/tmp/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_1x/DCTCP_1-1-test_1x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
+	argc = 2;
+	argv[1] = "/home/davide/Desktop/tmp/RAW/TCP/S11_F_SFST_SFTCP_FT_512_TCP_SHORT_FLOW_RESULT_1.data";
 //	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_02x/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
 //	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
 
-	if (argc < 2) {
-		cout << "Enter _RESULT_x.data file to process and output directory" << endl;
+	if (!parseCommandLine(argc, argv)) {
+		cout << "Incorrect or incomplete command line arguments" << endl;
 		exit(EXIT_FAILURE);
 	}
 
-	string resultFile = string(argv[1]);
 
-	if (argc > 2) {
-		outputDir = string(argv[2]);
-		if (outputDir.at(outputDir.length()-1) != '/') { outputDir.append("/");	}
-	} else {
-		// by default, put the output where the input RESULT file is
-		outputDir = resultFile.substr(0, resultFile.find_last_of('/')+1);
+
+	int iter = 10;	// select how many iteration of this simulation were done
+	string *resultFileList;
+	resultFileList = new string [iter];
+	if (iter > 0) {
+		// precompute all variation for the input result file coming from argv[1]
+		for (int i = 0; i < iter; i++) {
+			resultFileList[i] = string(argv[1]).substr(0, string(argv[1]).length()-6);
+			resultFileList[i].append(to_string(i+1)+".data");	// start from _1
+			cout << resultFileList[i] << endl;
+		}
 	}
-	cout << "Output to " << outputDir << endl;
+
+
 
 
 	// read flows from file
-	readMeasFlows(resultFile);
+	if (iter > 0) {
+		for (int i = 0; i < iter; i++) {
+			readMeasFlows(resultFileList[i]);
+		}
+	} else {
+		readMeasFlows(resultFile);
+	}
 	cout << "I read " << flowsMeasured.size() << " flows" << endl;
 
 
 	// select size categories
-	sizeCategory.push_back(128*1024);		// 128KB
-	sizeCategory.push_back(512*1024);		// 512KB
-	sizeCategory.push_back(1*1024*1024);	// 1MB
-	sizeCategory.push_back(10*1024*1024);	// 10MB
+//	sizeCategory.push_back(128*1024);		// 128KB
+//	sizeCategory.push_back(512*1024);		// 512KB
+//	sizeCategory.push_back(1*1024*1024);	// 1MB
+//	sizeCategory.push_back(10*1024*1024);	// 10MB
 	cout << "I have " << sizeCategory.size() << " flow size categories: ";
 	for (int i = 0; i < (int)sizeCategory.size(); i++) {
 		cout << sizeCategory.at(i) << "\t";
@@ -131,7 +144,7 @@ int main(int argc, char *argv[]) {
 
 
 
-
+/*
 	// categorise flows in flow size categories
 	cout << "Categorising flows by size..." << endl;
 	categoriseFlows();
@@ -186,7 +199,7 @@ int main(int argc, char *argv[]) {
 
 	cout << "DONE" << endl;
 
-
+*/
 
 
 
@@ -204,6 +217,47 @@ int main(int argc, char *argv[]) {
 	cout << "\n\n";
 	cout << "ProcessResult is ending..." << endl;
 	return 0;
+
+}
+
+
+bool parseCommandLine(int argc, char *argv[]) {
+	// parse input from command line and set appropriate flags for processing
+	// command line arguments available:
+	// 	-it <value>: number of iteration in the simulation, e.g. number of "_RESULT_" files
+	//	-in <input_file>: first "_RESULT_" file
+	// 	-out <output_directory>: if not specified, use location of <input_file>
+	bool setIt = false;
+	bool setIn = false;
+	bool setOut = false;
+	string commands[] = {"-it", "-in", "-out"};
+
+
+
+
+
+
+	if (argc < 2) {
+		cout << "Enter _RESULT_x.data file to process and output directory" << endl;
+		exit(EXIT_FAILURE);
+	}
+
+
+	resultFile = string(argv[1]);
+	if (argc > 2) {
+		outputDir = string(argv[2]);
+		if (outputDir.at(outputDir.length()-1) != '/') { outputDir.append("/");	}
+	} else {
+		// by default, put the output where the input RESULT file is
+		outputDir = resultFile.substr(0, resultFile.find_last_of('/')+1);
+	}
+	cout << "Output to " << outputDir << endl;
+
+
+
+
+	// parsing went well
+	return true;
 
 }
 
