@@ -19,6 +19,8 @@ using namespace std;
 // function declaration
 int main(int argc, char *argv[]);
 bool parseCommandLine(int argc, char *argv[]);
+bool generateResultFileList(int it, char *argv[]);
+bool getSizeCategories();
 bool readMeasFlows(string file);
 void categoriseFlows();
 
@@ -47,6 +49,9 @@ vector<flowMeas> flowsMeasured;
 vector<int> sizeCategory;			// list of size categories
 vector<flowMeas> *flowsMeasuredCat;	// list of flow measured per category
 string resultFile;
+bool doSizeCat = false;		// flags whether processing of flow statistics by the specified flow categories will be done
+int iter = -1;		// select how many iterations of this simulation were done
+string *resultFileList;	// stores list of "_RESULT_" file location
 
 
 // compare functions
@@ -64,31 +69,19 @@ int main(int argc, char *argv[]) {
 
 	// DEBUG
 	argc = 2;
-	argv[1] = "/home/davide/Desktop/tmp/RAW/TCP/S11_F_SFST_SFTCP_FT_512_TCP_SHORT_FLOW_RESULT_1.data";
+	argv[1] = "/home/davide/Desktop/tmp2/200/WEB/L2_1/TCP-L2MPTCP_1sub_04x_FT_128_DCMPTCP_P_FABRIC_RESULT_1.data";
 //	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_02x/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
 //	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
 
-	if (!parseCommandLine(argc, argv)) {
+	if (!parseCommandLine(argc, argv)) {	// THIS IS NOT COMPLETELY DONE YET
 		cout << "Incorrect or incomplete command line arguments" << endl;
 		exit(EXIT_FAILURE);
 	}
 
 
-
-	int iter = 10;	// select how many iteration of this simulation were done
-	string *resultFileList;
-	resultFileList = new string [iter];
-	if (iter > 0) {
-		// precompute all variation for the input result file coming from argv[1]
-		for (int i = 0; i < iter; i++) {
-			resultFileList[i] = string(argv[1]).substr(0, string(argv[1]).length()-6);
-			resultFileList[i].append(to_string(i+1)+".data");	// start from _1
-			cout << resultFileList[i] << endl;
-		}
-	}
-
-
+	iter = 1;	// select how many iteration of this simulation were done
+	generateResultFileList(iter, argv);
 
 
 	// read flows from file
@@ -102,23 +95,9 @@ int main(int argc, char *argv[]) {
 	cout << "I read " << flowsMeasured.size() << " flows" << endl;
 
 
-	// select size categories
-//	sizeCategory.push_back(128*1024);		// 128KB
-//	sizeCategory.push_back(512*1024);		// 512KB
-//	sizeCategory.push_back(1*1024*1024);	// 1MB
-//	sizeCategory.push_back(10*1024*1024);	// 10MB
-	cout << "I have " << sizeCategory.size() << " flow size categories: ";
-	for (int i = 0; i < (int)sizeCategory.size(); i++) {
-		cout << sizeCategory.at(i) << "\t";
-	}
-	cout << "\n";
 
 
-	// allocate memory for flowsMeasuredCat
-	flowsMeasuredCat = new vector<flowMeas> [(int)sizeCategory.size()+1];
-
-
-
+	// do processing with flows not categorised
 	cout << "Writing plotabble files for NON CATEGORISED flows...";
 	dumpMeasFlowStats(string(outputDir + "measFlowStats.dat"));
 
@@ -143,63 +122,69 @@ int main(int argc, char *argv[]) {
 
 
 
-
-/*
-	// categorise flows in flow size categories
-	cout << "Categorising flows by size..." << endl;
-	categoriseFlows();
+	doSizeCat = true;
 
 
-	for (int i = 0; i < (int)sizeCategory.size(); i++) {
-		cout << "\tI have " << flowsMeasuredCat[i].size() << " flows below " << sizeCategory.at(i) << endl;
+
+	if (doSizeCat) {
+			// categorise flows in flow size categories
+			cout << "Categorising flows by size..." << endl;
+
+			getSizeCategories();	// select size categories
+			categoriseFlows();
+
+
+			for (int i = 0; i < (int)sizeCategory.size(); i++) {
+				cout << "\tI have " << flowsMeasuredCat[i].size() << " flows below " << sizeCategory.at(i) << endl;
+			}
+			cout << "\tI have " << flowsMeasuredCat[sizeCategory.size()].size()
+					<< " flows above " << sizeCategory.at(sizeCategory.size()-1) << endl;
+
+
+			cout << "Writing plotabble files for CATEGORISED flows...";
+
+			// plot categorised flows to file
+			// 1) increasing FCT (CDF)
+			// 2) increasing avg throughput (CDF)
+			// 3) FCT over flow size (ordered in increasing flow size)
+			for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+				// 1) CDF of FCT
+				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
+				dumpCatCDF_FCT(string(outputDir + "CDF_FCT.dat"), i);
+
+				// 2) CDF of thr
+				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
+				dumpCatCDF_thr(string(outputDir + "CDF_thr.dat"), i);
+
+				// 3) FCT over flow size (ordered in increasing flow size)
+		//		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFlowSize);
+		//		dumpCatFCTvsFlowSize("FCT_FlowSize.dat", i);
+
+
+			}
+			cout << "DONE" << endl;
+
+
+
+
+			cout << "Writing percentile statistics...";
+			// write FCT stats, per size category
+			for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
+			}
+			writeFCTStats(string(outputDir + "stats_FCT.dat"));
+
+
+			// write throughput stats, per size category
+			for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
+				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
+			}
+			writeThrStats(string(outputDir + "stats_thr.dat"));
+
+			cout << "DONE" << endl;
+
 	}
-	cout << "\tI have " << flowsMeasuredCat[sizeCategory.size()].size()
-			<< " flows above " << sizeCategory.at(sizeCategory.size()-1) << endl;
 
-
-	cout << "Writing plotabble files for CATEGORISED flows...";
-
-	// plot categorised flows to file
-	// 1) increasing FCT (CDF)
-	// 2) increasing avg throughput (CDF)
-	// 3) FCT over flow size (ordered in increasing flow size)
-	for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
-		// 1) CDF of FCT
-		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
-		dumpCatCDF_FCT(string(outputDir + "CDF_FCT.dat"), i);
-
-		// 2) CDF of thr
-		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
-		dumpCatCDF_thr(string(outputDir + "CDF_thr.dat"), i);
-
-		// 3) FCT over flow size (ordered in increasing flow size)
-//		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFlowSize);
-//		dumpCatFCTvsFlowSize("FCT_FlowSize.dat", i);
-
-
-	}
-	cout << "DONE" << endl;
-
-
-
-
-	cout << "Writing percentile statistics...";
-	// write FCT stats, per size category
-	for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
-		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
-	}
-	writeFCTStats(string(outputDir + "stats_FCT.dat"));
-
-
-	// write throughput stats, per size category
-	for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
-		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
-	}
-	writeThrStats(string(outputDir + "stats_thr.dat"));
-
-	cout << "DONE" << endl;
-
-*/
 
 
 
@@ -257,6 +242,43 @@ bool parseCommandLine(int argc, char *argv[]) {
 
 
 	// parsing went well
+	return true;
+
+}
+
+bool generateResultFileList(int it, char *argv[]) {
+	// populate resultFileList with it elements
+	resultFileList = new string [iter];
+	if (iter > 0) {
+		// precompute all variation for the input result file coming from argv[1]
+		for (int i = 0; i < iter; i++) {
+			resultFileList[i] = string(argv[1]).substr(0, string(argv[1]).length()-6);
+			resultFileList[i].append(to_string(i+1)+".data");	// start from _1
+			cout << resultFileList[i] << endl;
+		}
+	}
+
+	// everything went good
+	return true;
+}
+
+bool getSizeCategories() {
+	// size categories could be read from somewhere
+	// do it statically for now
+	sizeCategory.push_back(128*1024);		// 128KB
+	sizeCategory.push_back(512*1024);		// 512KB
+	sizeCategory.push_back(1*1024*1024);	// 1MB
+	sizeCategory.push_back(10*1024*1024);	// 10MB
+	cout << "I have " << sizeCategory.size() << " flow size categories: ";
+	for (int i = 0; i < (int)sizeCategory.size(); i++) {
+		cout << sizeCategory.at(i) << "\t";
+	}
+	cout << "\n";
+
+
+	// allocate memory for flowsMeasuredCat
+	flowsMeasuredCat = new vector<flowMeas> [(int)sizeCategory.size()+1];
+
 	return true;
 
 }
