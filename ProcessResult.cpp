@@ -26,8 +26,12 @@ void categoriseFlows();
 
 bool dumpMeasFlowStats(string file);
 bool dumpCDF_FCT(string file);
+bool dumpShortCDF_FCT(string file);
+bool dumpShortCDF_FCT(string file, int cdfPoints);
 bool dumpFCTvsFlowSize(string file);
 bool dumpCDF_thr(string file);
+bool dumpLargeCDF_thr(string file);
+bool dumpLargeCDF_thr(string file, int cdfPoints);
 
 bool dumpCatCDF_FCT(string file, int cat);
 bool dumpCatFCTvsFlowSize(string file, int cat);
@@ -43,9 +47,10 @@ string outputDir;	// directory to save the output in
 struct flowMeas {	// collect stats of measured flows from _RESULTS_x.data file
 	uint64_t fct;		// flow completion time, ns
 	double thr;			// flow average throughput, Mbps
-	uint64_t size;	// flow desired size, bytes
+	uint64_t size;		// flow desired size, bytes
 };
 vector<flowMeas> flowsMeasured;
+vector<flowMeas> shortFlowsMeasured, largeFlowsMeasured;
 vector<int> sizeCategory;			// list of size categories
 vector<flowMeas> *flowsMeasuredCat;	// list of flow measured per category
 string resultFile;
@@ -68,8 +73,8 @@ int main(int argc, char *argv[]) {
 	cout << "ProcessResult is starting..." << endl;
 
 	// DEBUG
-	argc = 2;
-	argv[1] = "/home/davide/Desktop/tmp2/200/WEB/L2_1/TCP-L2MPTCP_1sub_04x_FT_128_DCMPTCP_P_FABRIC_RESULT_1.data";
+//	argc = 2;
+//	argv[1] = "/home/davide/Desktop/25052016_combined/200/WEB/L2_1/TCP-L2MPTCP_1sub_04x_FT_128_DCMPTCP_P_FABRIC_RESULT_1.data";
 //	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_02x/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
 //	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
@@ -93,6 +98,9 @@ int main(int argc, char *argv[]) {
 		readMeasFlows(resultFile);
 	}
 	cout << "I read " << flowsMeasured.size() << " flows" << endl;
+	cout << " " << shortFlowsMeasured.size() << " short flows" << endl;
+	cout << " " << largeFlowsMeasured.size() << " large flows" << endl;
+
 
 
 
@@ -121,10 +129,7 @@ int main(int argc, char *argv[]) {
 
 
 
-
 	doSizeCat = true;
-
-
 
 	if (doSizeCat) {
 			// categorise flows in flow size categories
@@ -184,6 +189,25 @@ int main(int argc, char *argv[]) {
 			cout << "DONE" << endl;
 
 	}
+
+
+
+	int cdfPoints = 1000;
+
+
+	// write CDF of FCT for short flows
+	// do one file with ALL points, and another with cdfPoints points
+	sort(shortFlowsMeasured.begin(), shortFlowsMeasured.end(), compareByFCT);
+	dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"));
+	dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"), cdfPoints);
+
+
+
+	// write CDF of throughput for long flows
+	// do one file with ALL points, and another with cdfPoints points
+	sort(largeFlowsMeasured.begin(), largeFlowsMeasured.end(), compareByThr);
+	dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"));
+	dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"), cdfPoints);
 
 
 
@@ -296,6 +320,7 @@ bool readMeasFlows(string file) {
 			// flow size is between [>...<], it is in bytes
 			// throughput is between [#...#], it is in Mbps
 			// FCT is between [*...*], it is in seconds, asjust it in nanoseconds
+			// also categorise flows by "Short" or "Large", between [=...=]
 
 			if (line.at(0) == '[') {
 				flowMeas temp;
@@ -327,6 +352,18 @@ bool readMeasFlows(string file) {
 //				cout << "fct: " << temp.fct << endl;
 
 				flowsMeasured.push_back(temp);
+
+
+				// check whether the flow is short or large
+				pos1 = line.find("[=");
+				pos2 = line.find("=]", pos1);
+				string t = line.substr(pos1+2, pos2-pos1-2);
+
+				if (t == "Large") {
+					largeFlowsMeasured.push_back(temp);
+				} else if (t == "Short") {
+					shortFlowsMeasured.push_back(temp);
+				}
 
 			}
 		}
@@ -422,6 +459,60 @@ bool dumpCDF_FCT(string file) {
 	}
 }
 
+bool dumpShortCDF_FCT(string file) {
+	// write CDF of FCT for short flows to file
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		// write header
+		write << "#CDF\tFCT(ns)" << "\n";
+		for (int i = 0; i < (int)shortFlowsMeasured.size(); i++) {
+			write << (double)(i+1)/(double)shortFlowsMeasured.size();
+			write << "\t" << shortFlowsMeasured.at(i).fct;
+			write << "\n";
+		}
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpShortCDF_FCT(...)"<< endl;
+		return false;
+	}
+}
+
+bool dumpShortCDF_FCT(string file, int cdfPoints) {
+	// write CDF of FCT for short flows to file
+	// write only cdfPoints points for the CDF
+	// write a point every interval
+	file = string(file.substr(0, file.length()-4) + "_" + to_string(cdfPoints) + "p.dat");
+
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		double interval = 1/(double)cdfPoints;
+		double inc = interval;
+
+		// write header
+		write << "#CDF\tFCT(ns)" << "\n";
+		for (int i = 0; i < (int)shortFlowsMeasured.size(); i++) {
+			double currCdf = (double)(i+1)/(double)shortFlowsMeasured.size();
+			if (inc < currCdf) {
+				write << inc;
+				write << "\t" << shortFlowsMeasured.at(i).fct;
+				write << "\n";
+				inc += interval;
+			}
+		}
+
+		// put the final one for cdf value 1
+		write << 1.0;
+		write << "\t" << shortFlowsMeasured.at(shortFlowsMeasured.size()-1).fct;
+		write << "\n";
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpShortCDF_FCT(..., ...)"<< endl;
+		return false;
+	}
+}
+
 bool dumpFCTvsFlowSize(string file) {
 	// write FCT for increasing flow sizes
 	ofstream write(file.c_str());
@@ -459,6 +550,62 @@ bool dumpCDF_thr(string file) {
 		cout << "Could not open file for dumpCDF_thr(...)"<< endl;
 		return false;
 	}
+}
+
+bool dumpLargeCDF_thr(string file) {
+	// write CDF of avg throughput for large flows to file
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		// write header
+		write << "#CDF\tavg_thr(Mbps)" << "\n";
+		for (int i = 0; i < (int)largeFlowsMeasured.size(); i++) {
+			write << (double)(i+1)/(double)largeFlowsMeasured.size();
+			write << "\t" << largeFlowsMeasured.at(i).thr;
+			write << "\n";
+		}
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpLargeCDF_thr(...)"<< endl;
+		return false;
+	}
+}
+
+bool dumpLargeCDF_thr(string file, int cdfPoints) {
+	// write CDF of avg throughput for large flows to file
+	// write only cdfPoints points for the CDF
+	// write a point every interval
+	file = string(file.substr(0, file.length()-4) + "_" + to_string(cdfPoints) + "p.dat");
+
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		double interval = 1/(double)cdfPoints;
+		double inc = interval;
+
+		// write header
+		write << "#CDF\tavg_thr(Mbps)" << "\n";
+		for (int i = 0; i < (int)largeFlowsMeasured.size(); i++) {
+			double currCdf = (double)(i+1)/(double)largeFlowsMeasured.size();
+			if (inc < currCdf) {
+				write << inc;
+				write << "\t" << largeFlowsMeasured.at(i).thr;
+				write << "\n";
+				inc += interval;
+			}
+		}
+
+		// put the final one for cdf value 1
+		write << 1.0;
+		write << "\t" << largeFlowsMeasured.at(largeFlowsMeasured.size()-1).thr;
+		write << "\n";
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpLargeCDF_thr(..., ...)"<< endl;
+		return false;
+	}
+
+
 }
 
 bool dumpCatCDF_FCT(string file, int cat) {
