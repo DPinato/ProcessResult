@@ -73,9 +73,8 @@ int main(int argc, char *argv[]) {
 	cout << "ProcessResult is starting..." << endl;
 
 	// DEBUG
-//	argc = 2;
-//	argv[1] = "/home/davide/Desktop/25052016_combined/200/WEB/L2_1/TCP-L2MPTCP_1sub_04x_FT_128_DCMPTCP_P_FABRIC_RESULT_1.data";
-//	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/DCTCP_1-1_DCTCP_02x/DCTCP_1-1_DCTCP_02x_FT_128_TCP_SHORT_FLOW_RESULT_1.data";
+	argc = 2;
+	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/08062016_RESULTS/RAW/D10_F_SFST_SFTCP_LF4SF_2560_FT_512/D10_F_SFST_SFTCP_LF4SF_2560_FT_512_DCMPTCP_SHORT_FLOW_RESULT_1.data";
 //	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
 
@@ -85,7 +84,7 @@ int main(int argc, char *argv[]) {
 	}
 
 
-	iter = 1;	// select how many iteration of this simulation were done
+	iter = 5;	// select how many iteration of this simulation were done
 	generateResultFileList(iter, argv);
 
 
@@ -317,7 +316,7 @@ bool readMeasFlows(string file) {
 		string line;
 
 		while(getline(read, line)) {
-			// flow size is between [>...<], it is in bytes
+			// flow size is between [<...>], it is in bytes
 			// throughput is between [#...#], it is in Mbps
 			// FCT is between [*...*], it is in seconds, asjust it in nanoseconds
 			// also categorise flows by "Short" or "Large", between [=...=]
@@ -328,8 +327,8 @@ bool readMeasFlows(string file) {
 				int pos2 = 0;
 
 				// get flow size,
-				pos1 = line.find("[>");
-				pos2 = line.find("<]", pos1);
+				pos1 = line.find("[<");
+				pos2 = line.find(">]", pos1);
 //				cout << "pos1: " << pos1 << "\tpos2: " << pos2 << endl;
 //				cout << line.substr(pos1+2, pos2-pos1-2) << endl;
 				temp.size = strtoull(line.substr(pos1+2, pos2-pos1-2).c_str(), NULL, 10);
@@ -747,7 +746,11 @@ bool writeThrStats(string file) {
 		write << "90%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.9;
-			write << flowsMeasuredCat[i].at(index).thr << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).thr << "\t";
+			}
 		}
 		write << "\n";
 
@@ -755,7 +758,11 @@ bool writeThrStats(string file) {
 		write << "95%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.95;
-			write << flowsMeasuredCat[i].at(index).thr << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).thr << "\t";
+			}
 		}
 		write << "\n";
 
@@ -763,7 +770,11 @@ bool writeThrStats(string file) {
 		write << "99%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.99;
-			write << flowsMeasuredCat[i].at(index).thr << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).thr << "\t";
+			}
 		}
 		write << "\n";
 
@@ -771,7 +782,11 @@ bool writeThrStats(string file) {
 		write << "99.9%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.999;
-			write << flowsMeasuredCat[i].at(index).thr << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).thr << "\t";
+			}
 		}
 		write << "\n";
 
@@ -779,7 +794,11 @@ bool writeThrStats(string file) {
 		write << "99.99%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.9999;
-			write << flowsMeasuredCat[i].at(index).thr << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).thr << "\t";
+			}
 		}
 		write << "\n";
 
@@ -807,7 +826,6 @@ bool writeFCTStats(string file) {
 		}
 		write << "\n";
 
-
 		// write the average
 		write << "avg\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
@@ -831,7 +849,11 @@ bool writeFCTStats(string file) {
 		write << "90%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.9;
-			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			}
 		}
 		write << "\n";
 
@@ -839,7 +861,11 @@ bool writeFCTStats(string file) {
 		write << "95%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.95;
-			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			}
 		}
 		write << "\n";
 
@@ -847,7 +873,11 @@ bool writeFCTStats(string file) {
 		write << "99%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.99;
-			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			}
 		}
 		write << "\n";
 
@@ -855,7 +885,11 @@ bool writeFCTStats(string file) {
 		write << "99.9%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.999;
-			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			}
 		}
 		write << "\n";
 
@@ -863,7 +897,11 @@ bool writeFCTStats(string file) {
 		write << "99.99%\t";
 		for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
 			int index = (int)flowsMeasuredCat[i].size()*0.9999;
-			write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			if ((int)flowsMeasuredCat[i].size() == 0 && index == 0) {
+				write << 0.0 << "\t";
+			} else {
+				write << flowsMeasuredCat[i].at(index).fct/1000000.0 << "\t";
+			}
 		}
 		write << "\n";
 
