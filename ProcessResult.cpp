@@ -19,9 +19,14 @@ using namespace std;
 // function declaration
 int main(int argc, char *argv[]);
 bool parseCommandLine(int argc, char *argv[]);
-bool generateResultFileList(int it, char *argv[]);
+bool generateResultFileList(int it, string file);
+bool doStdProc();
+bool doFairProc();
+bool doJobProc();
+
 bool getSizeCategories();
 bool readMeasFlows(string file);
+bool readMeasJobs(string file);
 void categoriseFlows();
 
 bool dumpMeasFlowStats(string file);
@@ -32,6 +37,11 @@ bool dumpFCTvsFlowSize(string file);
 bool dumpCDF_thr(string file);
 bool dumpLargeCDF_thr(string file);
 bool dumpLargeCDF_thr(string file, int cdfPoints);
+bool dumpFairCDF_thr(string file, int flowType);
+bool dumpFairCDF_thr(string file, int flowType, int cdfPoints);
+bool dumpCDF_JCT(string file);
+bool dumpCDF_JCT(string file, int cdfPoints);
+
 
 bool dumpCatCDF_FCT(string file, int cat);
 bool dumpCatFCTvsFlowSize(string file, int cat);
@@ -42,6 +52,7 @@ bool writeFCTStats(string file);
 
 
 
+string procMode;	// how the input files will be processed
 string outputDir;	// directory to save the output in
 
 struct flowMeas {	// collect stats of measured flows from _RESULTS_x.data file
@@ -51,6 +62,8 @@ struct flowMeas {	// collect stats of measured flows from _RESULTS_x.data file
 };
 vector<flowMeas> flowsMeasured;
 vector<flowMeas> shortFlowsMeasured, largeFlowsMeasured;
+vector<flowMeas> tcpFlowTypeList[3];
+
 vector<int> sizeCategory;			// list of size categories
 vector<flowMeas> *flowsMeasuredCat;	// list of flow measured per category
 string resultFile;
@@ -58,9 +71,21 @@ bool doSizeCat = false;		// flags whether processing of flow statistics by the s
 int iter = -1;		// select how many iterations of this simulation were done
 string *resultFileList;	// stores list of "_RESULT_" file location
 
+string tcpFlowTypes[] = {"TCP", "DCTCP", "DCMPTCP"};
+int unknownFlow = 0;
+
+
+struct jobMeas {
+	uint64_t jct;		// job completion time, ns
+};
+vector<jobMeas> jobsMeasured;
+
+
+
 
 // compare functions
 bool compareByFCT(const flowMeas &a, const flowMeas &b);
+bool compareByJCT(const jobMeas &a, const jobMeas &b);
 bool compareByFlowSize(const flowMeas &a, const flowMeas &b);
 bool compareByThr(const flowMeas &a, const flowMeas &b);
 
@@ -68,14 +93,16 @@ bool compareByThr(const flowMeas &a, const flowMeas &b);
 
 
 int main(int argc, char *argv[]) {
-	// argv[1] needs to be the "...RESULT_x.data" file to process
-	// if there is no argv[2], the output files will be saved in the same directory of the input file
+	// argv[1] flags the type of processing desired, "std", "fair" or "job"
+	// argv[2] needs to be the "...RESULT_x.data" file to process
+	// if there is no argv[3], the output files will be saved in the same directory of the input file
 	cout << "ProcessResult is starting..." << endl;
 
 	// DEBUG
-	argc = 2;
-	argv[1] = "/home/davide/Desktop/MMPTCP_RESULTS/08062016_RESULTS/RAW/D10_F_SFST_SFTCP_LF4SF_2560_FT_512/D10_F_SFST_SFTCP_LF4SF_2560_FT_512_DCMPTCP_SHORT_FLOW_RESULT_1.data";
-//	argv[2] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
+	argc = 3;
+	argv[1] = "job";
+	argv[2] = "/home/davide/Desktop/qmb_ON_result/RAW/S1_INCAST_CT_1G_SF_8_FT_128/S1_INCAST_CT_1G_SF_8_FT_128_MPTCP_INCAST_DIST_JOB_1.data";
+//	argv[3] = "/home/davide/Desktop/MMPTCP_RESULTS/12042016/tmp";		// output directory
 	//////
 
 	if (!parseCommandLine(argc, argv)) {	// THIS IS NOT COMPLETELY DONE YET
@@ -83,10 +110,96 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	iter = 1;	// select how many iteration of this simulation were done
+	generateResultFileList(iter, string(argv[2]));
 
-	iter = 5;	// select how many iteration of this simulation were done
-	generateResultFileList(iter, argv);
 
+
+	if (procMode == "std") {
+		// do standard processing
+		doStdProc();
+	} else if (procMode == "fair") {
+		// process for fairness
+		doFairProc();
+	} else if (procMode == "job") {
+		// process jobs
+		doJobProc();
+	}
+
+
+
+
+
+
+
+	cout << "\n\n";
+	cout << "ProcessResult is ending..." << endl;
+	return 0;
+
+}
+
+
+bool parseCommandLine(int argc, char *argv[]) {
+	// parse input from command line and set appropriate flags for processing
+	// command line arguments available:
+	// 	-it <value>: number of iteration in the simulation, e.g. number of "_RESULT_" files
+	//	-in <input_file>: first "_RESULT_" file
+	// 	-out <output_directory>: if not specified, use location of <input_file>
+	bool setIt = false;
+	bool setIn = false;
+	bool setOut = false;
+	string commands[] = {"-it", "-in", "-out"};
+
+
+
+
+
+
+	if (argc < 3) {
+		cout << "Enter the output desired, .data file to process" << endl;
+		exit(EXIT_FAILURE);
+	}
+
+
+	resultFile = string(argv[2]);
+	if (argc > 3) {
+		outputDir = string(argv[3]);
+		if (outputDir.at(outputDir.length()-1) != '/') { outputDir.append("/");	}
+	} else {
+		// by default, put the output where the input RESULT file is
+		outputDir = resultFile.substr(0, resultFile.find_last_of('/')+1);
+	}
+	cout << "Output to " << outputDir << endl;
+
+
+	procMode = argv[1];
+	if (!(procMode == "std" || procMode == "fair" || procMode == "job")) {
+		cout << "BAD procMode" << endl;
+		exit(EXIT_FAILURE);
+	}
+
+	// parsing went well
+	return true;
+
+}
+
+bool generateResultFileList(int it, string file) {
+	// populate resultFileList with it elements
+	resultFileList = new string [iter];
+	if (iter > 0) {
+		// precompute all variation for the input result file coming from argv[1]
+		for (int i = 0; i < iter; i++) {
+			resultFileList[i] = string(file).substr(0, string(file).length()-6);
+			resultFileList[i].append(to_string(i+1)+".data");	// start from _1
+			cout << resultFileList[i] << endl;
+		}
+	}
+
+	// everything went good
+	return true;
+}
+
+bool doStdProc() {
 
 	// read flows from file
 	if (iter > 0) {
@@ -99,9 +212,6 @@ int main(int argc, char *argv[]) {
 	cout << "I read " << flowsMeasured.size() << " flows" << endl;
 	cout << " " << shortFlowsMeasured.size() << " short flows" << endl;
 	cout << " " << largeFlowsMeasured.size() << " large flows" << endl;
-
-
-
 
 
 	// do processing with flows not categorised
@@ -152,19 +262,21 @@ int main(int argc, char *argv[]) {
 			// 2) increasing avg throughput (CDF)
 			// 3) FCT over flow size (ordered in increasing flow size)
 			for (int i = 0; i < (int)sizeCategory.size()+1; i++) {
-				// 1) CDF of FCT
-				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
-				dumpCatCDF_FCT(string(outputDir + "CDF_FCT.dat"), i);
 
-				// 2) CDF of thr
-				sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
-				dumpCatCDF_thr(string(outputDir + "CDF_thr.dat"), i);
+				if ((int)flowsMeasuredCat[i].size() > 0) {
+					// 1) CDF of FCT
+					sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFCT);
+					dumpCatCDF_FCT(string(outputDir + "CDF_FCT.dat"), i);
 
-				// 3) FCT over flow size (ordered in increasing flow size)
-		//		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFlowSize);
-		//		dumpCatFCTvsFlowSize("FCT_FlowSize.dat", i);
+					// 2) CDF of thr
+					sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByThr);
+					dumpCatCDF_thr(string(outputDir + "CDF_thr.dat"), i);
 
+					// 3) FCT over flow size (ordered in increasing flow size)
+			//		sort(flowsMeasuredCat[i].begin(), flowsMeasuredCat[i].end(), compareByFlowSize);
+			//		dumpCatFCTvsFlowSize("FCT_FlowSize.dat", i);
 
+				}
 			}
 			cout << "DONE" << endl;
 
@@ -191,99 +303,131 @@ int main(int argc, char *argv[]) {
 
 
 
-	int cdfPoints = 1000;
+	int cdfPoints = 100;
 
 
 	// write CDF of FCT for short flows
 	// do one file with ALL points, and another with cdfPoints points
-	sort(shortFlowsMeasured.begin(), shortFlowsMeasured.end(), compareByFCT);
-	dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"));
-	dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"), cdfPoints);
-
+	if ((int)shortFlowsMeasured.size() > 0) {
+		sort(shortFlowsMeasured.begin(), shortFlowsMeasured.end(), compareByFCT);
+		dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"));
+		dumpShortCDF_FCT(string(outputDir + "CDF_FCT_SHORT.dat"), cdfPoints);
+	}
 
 
 	// write CDF of throughput for long flows
 	// do one file with ALL points, and another with cdfPoints points
-	sort(largeFlowsMeasured.begin(), largeFlowsMeasured.end(), compareByThr);
-	dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"));
-	dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"), cdfPoints);
-
-
-
-
-
-//	uint64_t sum = 0;
-//	for (int i = 0; i < (int)flowsMeasuredCat[0].size(); i++) {
-//		sum += flowsMeasuredCat[0].at(i).fct;
-//	}
-//	cout << "sum: " << sum;
-//	cout << "\tavg: " << ((double)sum/(int)flowsMeasuredCat[0].size())/1000000.0;
-//	cout << endl;
-
-
-
-	cout << "\n\n";
-	cout << "ProcessResult is ending..." << endl;
-	return 0;
-
-}
-
-
-bool parseCommandLine(int argc, char *argv[]) {
-	// parse input from command line and set appropriate flags for processing
-	// command line arguments available:
-	// 	-it <value>: number of iteration in the simulation, e.g. number of "_RESULT_" files
-	//	-in <input_file>: first "_RESULT_" file
-	// 	-out <output_directory>: if not specified, use location of <input_file>
-	bool setIt = false;
-	bool setIn = false;
-	bool setOut = false;
-	string commands[] = {"-it", "-in", "-out"};
-
-
-
-
-
-
-	if (argc < 2) {
-		cout << "Enter _RESULT_x.data file to process and output directory" << endl;
-		exit(EXIT_FAILURE);
+	if ((int)largeFlowsMeasured.size() > 0) {
+		sort(largeFlowsMeasured.begin(), largeFlowsMeasured.end(), compareByThr);
+		dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"));
+		dumpLargeCDF_thr(string(outputDir + "CDF_thr_LARGE.dat"), cdfPoints);
 	}
 
 
-	resultFile = string(argv[1]);
-	if (argc > 2) {
-		outputDir = string(argv[2]);
-		if (outputDir.at(outputDir.length()-1) != '/') { outputDir.append("/");	}
-	} else {
-		// by default, put the output where the input RESULT file is
-		outputDir = resultFile.substr(0, resultFile.find_last_of('/')+1);
+
+
+
+/*
+	uint64_t sum = 0;
+	for (int i = 0; i < (int)flowsMeasuredCat[0].size(); i++) {
+		sum += flowsMeasuredCat[0].at(i).fct;
+
+		cout << flowsMeasuredCat[0].at(i).size;
+		cout << "\t" << flowsMeasuredCat[0].at(i).thr;
+		cout << "\n";
+
 	}
-	cout << "Output to " << outputDir << endl;
+	cout << "sum: " << sum;
+	cout << "\tavg: " << ((double)sum/(int)flowsMeasuredCat[0].size())/1000000.0;
+	cout << endl;
+*/
 
-
-
-
-	// parsing went well
 	return true;
 
 }
 
-bool generateResultFileList(int it, char *argv[]) {
-	// populate resultFileList with it elements
-	resultFileList = new string [iter];
+bool doFairProc() {
+	// categorise flows by their TCP algorithm
+
 	if (iter > 0) {
-		// precompute all variation for the input result file coming from argv[1]
 		for (int i = 0; i < iter; i++) {
-			resultFileList[i] = string(argv[1]).substr(0, string(argv[1]).length()-6);
-			resultFileList[i].append(to_string(i+1)+".data");	// start from _1
-			cout << resultFileList[i] << endl;
+			readMeasFlows(resultFileList[i]);
 		}
+	} else {
+		readMeasFlows(resultFile);
+	}
+	cout << "I read " << tcpFlowTypeList[0].size() << " TCP flows" << endl;
+	cout << "\t" << tcpFlowTypeList[1].size() << " DCTCP flows" << endl;
+	cout << "\t" << tcpFlowTypeList[2].size() << " DCMPTCP flows" << endl;
+	cout << "\tUnknown flow types: " << unknownFlow << endl;
+
+	int points = 100;	// number of points to put in the CDF
+
+
+	// TCP flows
+	if ((int)tcpFlowTypeList[0].size() > 0) {
+		sort(tcpFlowTypeList[0].begin(), tcpFlowTypeList[0].end(), compareByThr);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 0);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 0, points);
 	}
 
-	// everything went good
+	// DCTCP flows
+	if ((int)tcpFlowTypeList[1].size() > 0) {
+		sort(tcpFlowTypeList[1].begin(), tcpFlowTypeList[1].end(), compareByThr);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 1);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 1, points);
+	}
+
+
+	// DCMPTCP flows
+	if ((int)tcpFlowTypeList[2].size() > 0) {
+		sort(tcpFlowTypeList[2].begin(), tcpFlowTypeList[2].end(), compareByThr);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 2);
+		dumpFairCDF_thr(string(outputDir + "fair_CDF_thr.dat"), 2, points);
+	}
+
+
+
 	return true;
+
 }
+
+bool doJobProc() {
+	// process job results
+
+	// read flows from file
+	if (iter > 0) {
+		for (int i = 0; i < iter; i++) {
+			readMeasJobs(resultFileList[i]);
+		}
+	} else {
+		readMeasJobs(resultFile);
+	}
+	cout << "I read " << jobsMeasured.size() << " jobs" << endl;
+
+
+	// output JCT stats
+	cout << "Outputting JCT stats...";
+	int points = 500;	// number of points to put in the CDF
+
+	if ((int)jobsMeasured.size() > 0) {
+		sort(jobsMeasured.begin(), jobsMeasured.end(), compareByJCT);
+		dumpCDF_JCT(string(outputDir + "job_CDF_JCT.dat"));
+		dumpCDF_JCT(string(outputDir + "job_CDF_JCT.dat"), points);
+	}
+
+
+	cout << " DONE" << endl;
+
+	return true;
+
+}
+
+
+
+
+
+
 
 bool getSizeCategories() {
 	// size categories could be read from somewhere
@@ -364,6 +508,25 @@ bool readMeasFlows(string file) {
 					shortFlowsMeasured.push_back(temp);
 				}
 
+
+
+				// read TCP algorithm if needed
+				if (procMode == "fair") {
+					pos1 = line.find("[|");
+					pos2 = line.find("|]", pos1);
+					string a = line.substr(pos1+2, pos2-pos1-2);
+
+					if (a == "TCP") {
+						tcpFlowTypeList[0].push_back(temp);
+					} else if (a == "DCTCP") {
+						tcpFlowTypeList[1].push_back(temp);
+					} else if (a == "DCMPTCP") {
+						tcpFlowTypeList[2].push_back(temp);
+					} else {
+						unknownFlow++;
+					}
+				}
+
 			}
 		}
 
@@ -372,6 +535,43 @@ bool readMeasFlows(string file) {
 		return false;
 	}
 
+	return true;
+
+}
+
+bool readMeasJobs(string file) {
+	// read line by line, extract job stats and store them in vector
+
+	ifstream read(file.c_str());
+	if (read.is_open()) {
+		string line;
+
+		while(getline(read, line)) {
+			// JCT is between [-...-], it is in milliseconds, adjust it in nanoseconds
+
+			if (line.find("[-") != string::npos) {
+				jobMeas temp;
+				int pos1 = 0;
+				int pos2 = 0;
+
+
+				// get JCT
+				pos1 = line.find("[-");
+				pos2 = line.find("-]", pos1);
+//				cout << "pos1: " << pos1 << "\tpos2: " << pos2 << endl;
+//				cout << line.substr(pos1+2, pos2-pos1-2) << endl;
+				temp.jct = (uint64_t)1000000.0*strtod(line.substr(pos1+2, pos2-pos1-2).c_str(), NULL);
+//				cout << "jct: " << temp.jct << endl;
+
+				jobsMeasured.push_back(temp);
+
+			}
+		}
+
+	} else {
+		cout << "Could not open file" << endl;
+		return false;
+	}
 
 	return true;
 
@@ -382,9 +582,9 @@ void categoriseFlows() {
 	for (int i = 0; i < (int)flowsMeasured.size(); i++) {
 
 		// this is the dynamic way
-		int iS;
-		for (iS = 0; iS < (int)sizeCategory.size(); iS++) {
-			if ((int)flowsMeasured.at(i).size <= sizeCategory.at(iS)) {
+		uint64_t iS;
+		for (iS = 0; iS < (uint64_t)sizeCategory.size(); iS++) {
+			if (flowsMeasured.at(i).size <= (uint64_t)sizeCategory.at(iS)) {
 				break;
 			} else if ((int)flowsMeasured.at(i).size > sizeCategory.at((int)sizeCategory.size()-1)) {
 				iS = (int)sizeCategory.size();
@@ -603,9 +803,127 @@ bool dumpLargeCDF_thr(string file, int cdfPoints) {
 		cout << "Could not open file for dumpLargeCDF_thr(..., ...)"<< endl;
 		return false;
 	}
+}
+
+bool dumpFairCDF_thr(string file, int flowType) {
+	// write CDF of avg throughput to file
+	file = string(file.substr(0, file.length()-4) + "_" + tcpFlowTypes[flowType] + ".dat");
+
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		// write header
+		write << "#CDF\tavg_thr(Mbps)" << "\n";
+		for (int i = 0; i < (int)tcpFlowTypeList[flowType].size(); i++) {
+			write << (double)(i+1)/(double)tcpFlowTypeList[flowType].size();
+			write << "\t" << tcpFlowTypeList[flowType].at(i).thr;
+			write << "\n";
+		}
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpFairCDF_thr(...)"<< endl;
+		return false;
+	}
+}
+
+bool dumpFairCDF_thr(string file, int flowType, int cdfPoints) {
+	// write CDF of avg throughput to file
+	// write only cdfPoints points for the CDF
+	// write a point every interval
+	file = string(file.substr(0, file.length()-4) + "_" + tcpFlowTypes[flowType] + "_" + to_string(cdfPoints) + "p.dat");
+
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		double interval = 1/(double)cdfPoints;
+		double inc = interval;
+
+		// write header
+		write << "#CDF\tavg_thr(Mbps)" << "\n";
+		for (int i = 0; i < (int)tcpFlowTypeList[flowType].size(); i++) {
+			double currCdf = (double)(i+1)/(double)tcpFlowTypeList[flowType].size();
+			if (inc < currCdf) {
+				write << inc;
+				write << "\t" << tcpFlowTypeList[flowType].at(i).thr;
+				write << "\n";
+				inc += interval;
+			}
+		}
+
+		// put the final one for cdf value 1
+		write << 1.0;
+		write << "\t" << tcpFlowTypeList[flowType].at(tcpFlowTypeList[flowType].size()-1).thr;
+		write << "\n";
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpLargeCDF_thr(..., ...)"<< endl;
+		return false;
+	}
 
 
 }
+
+bool dumpCDF_JCT(string file) {
+	// write CDF of FCT for short flows to file
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		// write header
+		write << "#CDF\tJCT(ns)" << "\n";
+		for (int i = 0; i < (int)jobsMeasured.size(); i++) {
+			write << (double)(i+1)/(double)jobsMeasured.size();
+			write << "\t" << jobsMeasured.at(i).jct;
+			write << "\n";
+		}
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpCDF_JCT(...)"<< endl;
+		return false;
+	}
+}
+
+bool dumpCDF_JCT(string file, int cdfPoints) {
+	// write CDF of FCT for short flows to file
+	// write only cdfPoints points for the CDF
+	// write a point every interval
+	file = string(file.substr(0, file.length()-4) + "_" + to_string(cdfPoints) + "p.dat");
+
+	ofstream write(file.c_str());
+	if (write.is_open()) {
+		double interval = 1/(double)cdfPoints;
+		double inc = interval;
+
+		// write header
+		write << "#CDF\tFCT(ns)" << "\n";
+		for (int i = 0; i < (int)jobsMeasured.size(); i++) {
+			double currCdf = (double)(i+1)/(double)jobsMeasured.size();
+			if (inc < currCdf) {
+				write << inc;
+				write << "\t" << jobsMeasured.at(i).jct;
+				write << "\n";
+				inc += interval;
+			}
+		}
+
+		// put the final one for cdf value 1
+		write << 1.0;
+		write << "\t" << jobsMeasured.at(jobsMeasured.size()-1).jct;
+		write << "\n";
+		write.close();
+		return true;
+	} else {
+		cout << "Could not open file for dumpCDF_JCT(..., ...)"<< endl;
+		return false;
+	}
+}
+
+
+
+
+
+
+
+
 
 bool dumpCatCDF_FCT(string file, int cat) {
 	// write CDF of FCT, for flows in this flow category to file
@@ -922,6 +1240,10 @@ bool writeFCTStats(string file) {
 
 bool compareByFCT(const flowMeas &a, const flowMeas &b) {
 	return a.fct < b.fct;
+}
+
+bool compareByJCT(const jobMeas &a, const jobMeas &b) {
+	return a.jct < b.jct;
 }
 
 bool compareByFlowSize(const flowMeas &a, const flowMeas &b) {
